@@ -421,7 +421,6 @@
         <div><label for="cBiz">Business name</label><input id="cBiz" placeholder="e.g. Anita Textiles"></div>
         <div><label for="cMsg">What do you need help with?</label><textarea id="cMsg" placeholder="e.g. Onboarding on Amazon and Meesho"></textarea></div>
         <button class="btn btn-primary" type="submit">Send enquiry</button>
-        <div class="form-note">This form is a demo — connect it to your email or WhatsApp to start receiving real enquiries.</div>
       </form>
     </div>
   </section>
@@ -462,7 +461,6 @@
           <div class="login-err" id="loginErr">Incorrect username or password.</div>
           <button class="btn btn-gold" type="submit" style="width:100%;margin-top:20px;">Sign in</button>
         </form>
-        <div class="login-hint">Demo credentials — admin / kaizen2026</div>
       </div>
       <a class="back-link" href="#" onclick="goTo('view-site');return false;">← Back to website</a>
     </div>
@@ -483,6 +481,7 @@
       <div class="side-link" data-tab="tab-sellers" onclick="showTab('tab-sellers',this)">Sellers</div>
       <div class="side-link" data-tab="tab-record" onclick="showTab('tab-record',this)">Record orders</div>
       <div class="side-link" data-tab="tab-addseller" onclick="showTab('tab-addseller',this)">Add seller</div>
+      <div class="side-link" data-tab="tab-enquiries" onclick="showTab('tab-enquiries',this)">Enquiries</div>
       <div class="side-bottom">
         <a class="btn btn-ghost btn-sm" style="border-color:var(--line-soft);color:var(--paper);" href="#" onclick="handleLogout();return false;">Log out</a>
       </div>
@@ -560,6 +559,14 @@
             <div><label for="asStatus">Status</label><select id="asStatus"><option value="onboarding">Onboarding</option><option value="active">Active</option></select></div>
             <button class="btn btn-primary" type="submit">Add seller</button>
           </form>
+        </div>
+      </div>
+
+      <div class="dash-tab" id="tab-enquiries">
+        <div class="panel">
+          <h2>Website enquiries</h2>
+          <p class="panel-sub">Submissions from the "Send enquiry" contact form on the site.</p>
+          <div id="enquiriesTableWrap"></div>
         </div>
       </div>
 
@@ -652,10 +659,11 @@ function showTab(tabId, el){
   document.getElementById(tabId).classList.add('active');
   document.querySelectorAll('.side-link').forEach(function(l){l.classList.remove('active');});
   if(el) el.classList.add('active');
-  const headings = {'tab-overview':'Overview','tab-sellers':'Sellers','tab-record':'Record orders','tab-addseller':'Add seller'};
+  const headings = {'tab-overview':'Overview','tab-sellers':'Sellers','tab-record':'Record orders','tab-addseller':'Add seller','tab-enquiries':'Enquiries'};
   document.getElementById('dashHeading').textContent = headings[tabId];
   if(tabId === 'tab-overview') renderOverview();
   if(tabId === 'tab-sellers') renderSellersTable();
+  if(tabId === 'tab-enquiries') renderEnquiries();
 }
 function showToast(msg){
   const t = document.getElementById('toast');
@@ -663,10 +671,27 @@ function showToast(msg){
   t.classList.add('show');
   setTimeout(function(){t.classList.remove('show');}, 2400);
 }
-function handleContactSubmit(e){
+async function handleContactSubmit(e){
   e.preventDefault();
-  showToast('Enquiry captured — connect this form to email/WhatsApp to go live.');
-  e.target.reset();
+  const name = document.getElementById('cName').value.trim();
+  const phone = document.getElementById('cPhone').value.trim();
+  const biz = document.getElementById('cBiz').value.trim();
+  const msg = document.getElementById('cMsg').value.trim();
+  if(!name || !phone){ showToast('Please fill in your name and phone number.'); return; }
+  try{
+    await db.collection('enquiries').add({
+      name: name,
+      phone: phone,
+      business: biz,
+      message: msg,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    showToast('Thanks — your enquiry has been sent. We\'ll be in touch soon.');
+    e.target.reset();
+  }catch(err){
+    console.error('Enquiry save failed', err);
+    showToast('Could not send — please check your connection and try again.');
+  }
 }
 
 function handleLogin(e){
@@ -790,6 +815,33 @@ function renderSellerDetail(){
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:10, font:{size:11}}}},
       scales:{ x:{stacked:true, grid:{display:false}}, y:{stacked:true, beginAtZero:true, grid:{color:'rgba(21,31,56,0.08)'}} } }
   });
+}
+
+async function renderEnquiries(){
+  const wrap = document.getElementById('enquiriesTableWrap');
+  wrap.innerHTML = '<div class="empty-state">Loading enquiries…</div>';
+  try{
+    const snap = await db.collection('enquiries').orderBy('createdAt', 'desc').get();
+    if(snap.empty){
+      wrap.innerHTML = '<div class="empty-state">No enquiries yet — they\'ll appear here when someone submits the contact form on the site.</div>';
+      return;
+    }
+    const rows = snap.docs.map(function(doc){
+      const d = doc.data();
+      const when = d.createdAt && d.createdAt.toDate ? d.createdAt.toDate().toLocaleString('en-IN') : '—';
+      return '<tr>'+
+        '<td><strong>'+escHtml(d.name||'')+'</strong></td>'+
+        '<td>'+escHtml(d.phone||'')+'</td>'+
+        '<td>'+escHtml(d.business||'—')+'</td>'+
+        '<td>'+escHtml(d.message||'—')+'</td>'+
+        '<td style="white-space:nowrap;">'+when+'</td>'+
+        '</tr>';
+    }).join('');
+    wrap.innerHTML = '<table class="data"><thead><tr><th>Name</th><th>Phone</th><th>Business</th><th>Message</th><th>Received</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  }catch(e){
+    console.error('Loading enquiries failed', e);
+    wrap.innerHTML = '<div class="empty-state">Could not load enquiries — check your Firestore connection.</div>';
+  }
 }
 
 function populateSellerSelect(){
